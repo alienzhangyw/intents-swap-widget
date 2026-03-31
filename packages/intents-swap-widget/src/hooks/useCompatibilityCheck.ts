@@ -124,6 +124,22 @@ export function useCompatibilityCheck({ providers, walletAddress }: Props) {
         };
       }
 
+      case 'tron': {
+        assertDefined(providers?.tron, 'No Tron provider configured');
+
+        const signatureResult = await providers.tron.signMessage(
+          msg.TRON.message,
+        );
+
+        assertDefined(signatureResult.signature, 'No signature returned');
+
+        return {
+          type: 'TRON',
+          signatureData: signatureResult.signature,
+          signedData: msg.TRON,
+        };
+      }
+
       default:
         notReachable(intentsAccountType);
     }
