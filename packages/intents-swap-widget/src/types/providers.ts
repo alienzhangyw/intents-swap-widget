@@ -31,9 +31,28 @@ export type StellarProvider = {
   >;
 };
 
+export type TronProvider = {
+  address?: string;
+  signMessage: (
+    message: string,
+  ) => Promise<{ signature: string; address?: string }>;
+  signTransaction?: (tx: {
+    txID?: string;
+    raw_data?: Record<string, unknown>;
+    raw_data_hex?: string;
+    signature?: string[];
+  }) => Promise<{
+    txID?: string;
+    raw_data?: Record<string, unknown>;
+    raw_data_hex?: string;
+    signature?: string[];
+  }>;
+};
+
 export type Providers = {
   evm?: undefined | null | EvmProvider;
   sol?: undefined | null | SolanaProvider;
   stellar?: undefined | null | StellarProvider;
   near?: undefined | null | (() => NearWalletBase);
+  tron?: undefined | null | TronProvider;
 };
