@@ -32,6 +32,7 @@ const accountChainMap: Record<IntentsAccountType, Chains> = {
   evm: 'eth',
   near: 'near',
   stellar: 'stellar',
+  tron: 'tron',
 };
 
 export const useSelectedTokensEffect = ({
