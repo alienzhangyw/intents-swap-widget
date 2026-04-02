@@ -8,6 +8,10 @@ import type { IntentsAccountType } from '@/types/config';
 export const getIntentsAccountTypeFromAddress = (
   address: string,
 ): IntentsAccountType | undefined => {
+  if (isTronAddress(address)) {
+    return 'tron';
+  }
+
   if (isSolanaAddress(address)) {
     return 'sol';
   }

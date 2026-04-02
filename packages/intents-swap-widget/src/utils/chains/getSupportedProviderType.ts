@@ -17,16 +17,16 @@ export const getSupportedProviderType = (
     return 'near';
   }
 
+  if (isTronAddress(depositAddress)) {
+    return 'tron';
+  }
+
   if (isSolanaAddress(depositAddress)) {
     return 'sol';
   }
 
   if (isStellarAddress(depositAddress)) {
     return 'stellar';
-  }
-
-  if (isTronAddress(depositAddress)) {
-    return 'tron';
   }
 
   throw new Error('Unsupported provider type');
