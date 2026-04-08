@@ -29,7 +29,20 @@ export class IntentSignerTron
       signer_id: intent.signer_id ?? signerId,
     });
 
-    const { signature } = await this.tronWallet.signMessage(message);
+    let signature: string;
+
+    if (this.tronWallet.request) {
+      const result = await this.tronWallet.request({
+        method: 'tron_signMessageV2',
+        params: { message },
+      });
+
+      signature = result as string;
+    } else if (this.tronWallet.signMessage) {
+      ({ signature } = await this.tronWallet.signMessage(message));
+    } else {
+      throw new Error('Tron provider does not support message signing.');
+    }
 
     return {
       payload: message,

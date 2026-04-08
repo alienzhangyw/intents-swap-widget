@@ -33,7 +33,11 @@ export type StellarProvider = {
 
 export type TronProvider = {
   address?: string;
-  signMessage: (
+  request: (args: {
+    method: string;
+    params?: Record<string, unknown>;
+  }) => Promise<unknown>;
+  signMessage?: (
     message: string,
   ) => Promise<{ signature: string; address?: string }>;
   signTransaction?: (tx: {

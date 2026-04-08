@@ -127,15 +127,32 @@ export function useCompatibilityCheck({ providers, walletAddress }: Props) {
       case 'tron': {
         assertDefined(providers?.tron, 'No Tron provider configured');
 
-        const signatureResult = await providers.tron.signMessage(
-          msg.TRON.message,
-        );
+        let signature: string;
 
-        assertDefined(signatureResult.signature, 'No signature returned');
+        if (providers.tron.request) {
+          const result = await providers.tron.request({
+            method: 'tron_signMessageV2',
+            params: { message: msg.TRON.message },
+          });
+
+          assertDefined(result, 'No signature returned');
+          signature = result as string;
+        } else {
+          assertDefined(
+            providers.tron.signMessage,
+            'Tron provider does not support message signing',
+          );
+          const signatureResult = await providers.tron.signMessage(
+            msg.TRON.message,
+          );
+
+          assertDefined(signatureResult.signature, 'No signature returned');
+          signature = signatureResult.signature;
+        }
 
         return {
           type: 'TRON',
-          signatureData: signatureResult.signature,
+          signatureData: signature,
           signedData: msg.TRON,
         };
       }

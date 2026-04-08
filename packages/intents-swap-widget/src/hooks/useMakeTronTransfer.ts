@@ -12,7 +12,7 @@ const DEFAULT_FEE_LIMIT = 100_000_000;
 
 type TronRpcTransaction = Parameters<
   NonNullable<TronProvider['signTransaction']>
->[0];
+>[0] & { Error?: string };
 
 type TronTriggerSmartContractResponse = {
   result?: {
@@ -98,7 +98,7 @@ export const useMakeTronTransfer = ({
       });
     }
 
-    if (!provider.signTransaction) {
+    if (!provider.request && !provider.signTransaction) {
       throw new TransferError({
         code: 'TRANSFER_INVALID_INITIAL',
         meta: {
@@ -124,13 +124,21 @@ export const useMakeTronTransfer = ({
     }
 
     const rpcUrl = DEFAULT_TRON_RPC_URL;
+    const explorerBase =
+      CHAIN_EXPLORERS_BY_CHAIN_NAME.tron ??
+      'https://tronscan.org/#/transaction/';
+
+    // Build unsigned transaction
     let unsignedTransaction: TronRpcTransaction;
 
     if (!tokenAddress) {
       const amountNumber = Number(amountBigInt);
 
       if (!Number.isSafeInteger(amountNumber)) {
-        throw new Error('Tron transfer amount is too large.');
+        throw new TransferError({
+          code: 'TRANSFER_INVALID_INITIAL',
+          meta: { message: 'Tron transfer amount is too large.' },
+        });
       }
 
       unsignedTransaction = await postTronRpc<TronRpcTransaction>(
@@ -140,9 +148,15 @@ export const useMakeTronTransfer = ({
           owner_address: tronAddressToHex(provider.address),
           to_address: tronAddressToHex(toAddress),
           amount: amountNumber,
-          visible: false,
         },
       );
+
+      if (unsignedTransaction.Error ?? !unsignedTransaction.txID) {
+        throw new TransferError({
+          code: 'TRANSFER_INVALID_INITIAL',
+          meta: { message: 'Insufficient TRX balance to cover network fee.' },
+        });
+      }
     } else {
       const response = await postTronRpc<TronTriggerSmartContractResponse>(
         rpcUrl,
@@ -154,44 +168,54 @@ export const useMakeTronTransfer = ({
           parameter: `${getAbiAddressParam(toAddress)}${getAbiUint256Param(amountBigInt)}`,
           fee_limit: DEFAULT_FEE_LIMIT,
           call_value: 0,
-          visible: false,
         },
       );
 
       if (!response.result?.result || !response.transaction) {
-        throw new Error(
-          response.result?.message ??
-            'Failed to create Tron token transfer transaction.',
-        );
+        throw new TransferError({
+          code: 'EXTERNAL_TRANSFER_FAILED',
+        });
       }
 
       unsignedTransaction = response.transaction;
     }
 
-    const signedTransaction =
-      await provider.signTransaction(unsignedTransaction);
+    let signedTransaction: TronRpcTransaction;
+
+    // Primary path: sign via request (AppKit TronConnector)
+    if (provider.request) {
+      signedTransaction = (await provider.request({
+        method: 'tron_sendTransaction',
+        params: { transaction: unsignedTransaction as Record<string, unknown> },
+      })) as TronRpcTransaction;
+    } else {
+      // Fallback path: sign via signTransaction (legacy wallets)
+      signedTransaction = await provider.signTransaction!(unsignedTransaction);
+    }
 
     const broadcastResult = await postTronRpc<TronBroadcastResponse>(
       rpcUrl,
       '/wallet/broadcasttransaction',
-      signedTransaction,
+      signedTransaction as Record<string, unknown>,
     );
 
     if (!broadcastResult.result) {
-      throw new Error(
-        broadcastResult.message ?? 'Failed to broadcast Tron transaction.',
-      );
+      throw new TransferError({
+        code: 'EXTERNAL_TRANSFER_FAILED',
+      });
     }
 
     const hash = broadcastResult.txid ?? signedTransaction.txID;
 
     if (!hash) {
-      throw new Error('No Tron transaction hash returned.');
+      throw new TransferError({
+        code: 'EXTERNAL_TRANSFER_FAILED',
+      });
     }
 
     return {
       hash,
-      transactionLink: `${CHAIN_EXPLORERS_BY_CHAIN_NAME.tron ?? 'https://tronscan.org/#/transaction/'}${hash}`,
+      transactionLink: `${explorerBase}${hash}`,
     };
   };
 
