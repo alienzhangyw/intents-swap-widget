@@ -1,18 +1,18 @@
-import { Trans } from 'react-i18next';
 import { OpenInNewW700 as OpenInNew } from '@material-symbols-svg/react-rounded/icons/open-in-new';
+import { Trans } from 'react-i18next';
 
-import { useConfig } from '@/config';
 import { Button } from '@/components/Button';
-import { TinyNumber } from '@/components/TinyNumber';
 import { ErrorMessage } from '@/components/ErrorMessage';
-import { useComputedSnapshot, useUnsafeSnapshot } from '@/machine/snap';
-import { useTypedTranslation } from '@/localisation';
-import { useWalletConnection } from '@/hooks/useWalletConnection';
+import { TinyNumber } from '@/components/TinyNumber';
+import { useConfig } from '@/config';
 import { useMakeTransfer } from '@/hooks/useMakeTransfer';
 import { useSwitchChain } from '@/hooks/useSwitchChain';
-import { isNotEmptyAmount } from '@/utils/checkers/isNotEmptyAmount';
-import type { MakeTransfer, TransferResult } from '@/types/transfer';
+import { useWalletConnection } from '@/hooks/useWalletConnection';
+import { useTypedTranslation } from '@/localisation';
 import type { Context } from '@/machine/context';
+import { useComputedSnapshot, useUnsafeSnapshot } from '@/machine/snap';
+import type { MakeTransfer, TransferResult } from '@/types/transfer';
+import { isNotEmptyAmount } from '@/utils/checkers/isNotEmptyAmount';
 
 type Props = {
   label: string;
@@ -338,7 +338,12 @@ const SubmitButtonBase = (props: Props) => {
   // Chain switching required - skip error checks
   // because balance/errors are checked on current chain, not target chain
   // The onClick handler will automatically switch the chain before proceeding
-  if (!isSwitchingChainRequired && SubmitErrorButton) {
+  // Also let transfer failures fall through to the retryable button below.
+  if (
+    !isSwitchingChainRequired &&
+    SubmitErrorButton &&
+    ctx.transferStatus.status !== 'error'
+  ) {
     return SubmitErrorButton;
   }
 
@@ -360,10 +365,22 @@ const SubmitButtonBase = (props: Props) => {
     }
   }
 
+  if (ctx.quoteStatus === 'pending') {
+    return (
+      <Button state="loading" {...commonBtnProps}>
+        {ctx.quote
+          ? t('submit.pending.quote.refreshing', 'Refreshing quote')
+          : t('submit.pending.quote.finalizing', 'Finalizing quote')}
+      </Button>
+    );
+  }
+
   if (ctx.transferStatus.status === 'error') {
     return (
       <div className="gap-sw-md flex flex-col">
-        <Button {...commonBtnProps}>{props.label}</Button>
+        <Button {...commonBtnProps} onClick={onClick}>
+          {props.label}
+        </Button>
         <ErrorMessage>
           {(() => {
             switch (ctx.error?.code) {
@@ -381,16 +398,6 @@ const SubmitButtonBase = (props: Props) => {
           })()}
         </ErrorMessage>
       </div>
-    );
-  }
-
-  if (ctx.quoteStatus === 'pending') {
-    return (
-      <Button state="loading" {...commonBtnProps}>
-        {ctx.quote
-          ? t('submit.pending.quote.refreshing', 'Refreshing quote')
-          : t('submit.pending.quote.finalizing', 'Finalizing quote')}
-      </Button>
     );
   }
 
@@ -430,7 +437,8 @@ const SubmitButtonWithWallet = (props: Props) => {
   const errorButton = useGetErrorButton(ctx);
 
   // 1. Has errors? Show error button
-  if (errorButton) {
+  // Transfer errors are handled in SubmitButtonBase so the user can retry.
+  if (errorButton && ctx.transferStatus.status !== 'error') {
     return errorButton;
   }
 
