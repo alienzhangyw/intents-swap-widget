@@ -274,7 +274,6 @@ const SubmitButtonBase = (props: Props) => {
   const { t } = useTypedTranslation();
   const {
     isNativeNearDeposit,
-    isDirectNonNearWithdrawal,
     isDirectTokenOnNearDeposit,
     isDirectNearTokenWithdrawal,
   } = useComputedSnapshot();
@@ -411,7 +410,6 @@ const SubmitButtonBase = (props: Props) => {
 
   if (
     !ctx.quote &&
-    !isDirectNonNearWithdrawal &&
     !isDirectTokenOnNearDeposit &&
     !isDirectNearTokenWithdrawal &&
     !isNativeNearDeposit

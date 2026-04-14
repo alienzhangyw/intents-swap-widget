@@ -45,18 +45,7 @@ type MakeArgs = {
   onPending: (reason: 'WAITING_CONFIRMATION' | 'PROCESSING') => void;
 };
 
-const getDestinationAddress = (ctx: Context, isDirectTransfer: boolean) => {
-  if (isDirectTransfer) {
-    if (ctx.sendAddress) {
-      return ctx.sendAddress;
-    }
-
-    throw new TransferError({
-      code: 'TRANSFER_INVALID_INITIAL',
-      meta: { message: 'Send to address is required for a direct transfer' },
-    });
-  }
-
+const getDestinationAddress = (ctx: Context) => {
   if (!ctx.quote || ctx.quote.dry) {
     throw new TransferError({
       code: 'TRANSFER_INVALID_INITIAL',
@@ -155,11 +144,8 @@ export const useMakeIntentsTransfer = ({ providers }: IntentsTransferArgs) => {
   const { ctx } = useUnsafeSnapshot();
   const { intentsAccountType } = useIntentsAccountType();
   const { appName } = useConfig();
-  const {
-    isNativeNearDeposit,
-    isDirectNearTokenWithdrawal,
-    isDirectNonNearWithdrawal,
-  } = useComputedSnapshot();
+  const { isNativeNearDeposit, isDirectNearTokenWithdrawal } =
+    useComputedSnapshot();
 
   const make = async ({
     message,
@@ -210,6 +196,7 @@ export const useMakeIntentsTransfer = ({ providers }: IntentsTransferArgs) => {
           });
         }
 
+        logger.debug('[WIDGET] Use EVM signer for transfer.');
         signer = new IntentSignerPrivy(
           { walletAddress: ctx.walletAddress },
           providers.evm,
@@ -224,6 +211,7 @@ export const useMakeIntentsTransfer = ({ providers }: IntentsTransferArgs) => {
           });
         }
 
+        logger.debug('[WIDGET] Use SOL signer for transfer.');
         signer = new IntentSignerSolana(
           { walletAddress: ctx.walletAddress },
           providers.sol,
@@ -239,6 +227,7 @@ export const useMakeIntentsTransfer = ({ providers }: IntentsTransferArgs) => {
           });
         }
 
+        logger.debug('[WIDGET] Use NEAR signer for transfer.');
         await validateNearPublicKey(providers.near(), ctx.walletAddress);
 
         signer = createNearWalletSigner({
@@ -257,6 +246,7 @@ export const useMakeIntentsTransfer = ({ providers }: IntentsTransferArgs) => {
           });
         }
 
+        logger.debug('[WIDGET] Use Stellar signer for transfer.');
         signer = new IntentSignerStellar(
           { walletAddress: ctx.walletAddress },
           providers.stellar,
@@ -292,11 +282,11 @@ export const useMakeIntentsTransfer = ({ providers }: IntentsTransferArgs) => {
     let routeConfig: RouteConfig | undefined;
 
     if (isNativeNearDeposit) {
+      logger.debug('[WIDGET] Native Near deposit');
       routeConfig = undefined;
     } else if (isDirectNearTokenWithdrawal) {
+      logger.debug('[WIDGET] Direct Near token withdrawal');
       routeConfig = createNearWithdrawalRoute(message ?? undefined);
-    } else if (isDirectNonNearWithdrawal) {
-      routeConfig = undefined;
     } else {
       routeConfig = createInternalTransferRoute();
     }
@@ -304,10 +294,7 @@ export const useMakeIntentsTransfer = ({ providers }: IntentsTransferArgs) => {
     const withdrawalParams = {
       assetId: ctx.sourceToken.assetId,
       amount: BigInt(ctx.sourceTokenAmount),
-      destinationAddress: getDestinationAddress(
-        ctx,
-        isDirectNearTokenWithdrawal || isDirectNonNearWithdrawal,
-      ),
+      destinationAddress: getDestinationAddress(ctx),
       destinationMemo: undefined,
       feeInclusive: true,
       routeConfig,
@@ -316,22 +303,38 @@ export const useMakeIntentsTransfer = ({ providers }: IntentsTransferArgs) => {
     onPending('WAITING_CONFIRMATION');
 
     try {
+      logger.debug('[WIDGET] Fee estimation...', withdrawalParams);
+
       const feeEstimation = await sdk.estimateWithdrawalFee({
         withdrawalParams,
       });
 
+      if (!feeEstimation) {
+        throw new TransferError({
+          code: 'TRANSFER_INVALID_INITIAL',
+          meta: { message: 'Fee estimation failed' },
+        });
+      }
+
+      logger.debug('[WIDGET] Sign and send withdrawal intent...');
       const { intentHash } = await sdk.signAndSendWithdrawalIntent({
         withdrawalParams,
         feeEstimation,
       });
 
+      logger.debug('[WIDGET] Wait for intent settlement...');
+
       onPending('PROCESSING');
       const intentTx = await sdk.waitForIntentSettlement({ intentHash });
+
+      logger.debug('[WIDGET] Wait for withdrawal completion...');
 
       const completionResult = await sdk.waitForWithdrawalCompletion({
         withdrawalParams,
         intentTx,
       });
+
+      logger.debug('[WIDGET] Withdrawal completed.', completionResult);
 
       return {
         intent: intentTx.hash,
